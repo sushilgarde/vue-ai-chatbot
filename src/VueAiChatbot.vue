@@ -32,6 +32,18 @@
         flat
         round
         dense
+        icon="settings"
+        @click="showSettings = !showSettings"
+        size="sm"
+        class="q-mr-xs"
+      >
+        <q-tooltip>Settings</q-tooltip>
+      </q-btn>
+
+      <q-btn
+        flat
+        round
+        dense
         icon="add"
         @click="createNewChat"
         size="sm"
@@ -110,6 +122,84 @@
         class="col flex flex-column full-height relative-position"
         style="display: flex; flex-direction: column"
       >
+        <transition name="fade">
+          <div
+            v-if="showSettings"
+            class="settings-overlay q-pa-md"
+            :class="isDarkMode ? 'bg-grey-10' : 'bg-grey-1'"
+          >
+            <div class="row items-center q-mb-md">
+              <div class="text-h6">Settings</div>
+              <q-space />
+              <q-btn
+                icon="close"
+                flat
+                round
+                dense
+                @click="showSettings = false"
+              />
+            </div>
+
+            <q-input
+              v-model="config.apiUrl"
+              label="API Endpoint"
+              dense
+              outlined
+              class="q-mb-sm"
+              :dark="isDarkMode"
+            />
+            <q-input
+              v-model="config.apiKey"
+              label="API Key (Optional)"
+              dense
+              outlined
+              type="password"
+              class="q-mb-sm"
+              :dark="isDarkMode"
+            />
+            <q-input
+              v-model="config.model"
+              label="Model Name"
+              dense
+              outlined
+              class="q-mb-md"
+              :dark="isDarkMode"
+            />
+
+            <div class="text-caption q-mb-xs">Parameters</div>
+            <div class="row q-col-gutter-sm">
+              <div class="col-6">
+                <q-input
+                  v-model.number="config.temperature"
+                  label="Temp"
+                  type="number"
+                  step="0.1"
+                  dense
+                  outlined
+                  :dark="isDarkMode"
+                />
+              </div>
+              <div class="col-6">
+                <q-input
+                  v-model.number="config.maxTokens"
+                  label="Max Tokens"
+                  type="number"
+                  dense
+                  outlined
+                  :dark="isDarkMode"
+                />
+              </div>
+            </div>
+
+            <q-btn
+              color="primary"
+              label="Save & Close"
+              class="full-width q-mt-lg"
+              @click="saveSettings"
+            />
+          </div>
+        </transition>
+
         <q-scroll-area class="chat-area q-pa-md col" ref="chatScroll">
           <div v-for="(msg, index) in messages" :key="index" class="q-mb-md">
             <q-chat-message
@@ -138,7 +228,6 @@
                   />
                 </q-avatar>
               </template>
-
               <div
                 class="markdown-body-wrapper"
                 v-html="renderMarkdown(msg.displayContent)"
@@ -147,17 +236,15 @@
               ></div>
             </q-chat-message>
           </div>
-
           <q-chat-message
             v-if="isLoading && currentBotText === ''"
             :name="botName"
             :bg-color="isDarkMode ? 'grey-9' : 'grey-3'"
           >
-            <template v-slot:avatar>
-              <q-avatar size="32px" class="q-mr-sm">
-                <q-icon name="smart_toy" color="grey-6" />
-              </q-avatar>
-            </template>
+            <template v-slot:avatar
+              ><q-avatar size="32px"
+                ><q-icon name="smart_toy" color="grey-6" /></q-avatar
+            ></template>
             <q-spinner-dots size="1.5rem" />
           </q-chat-message>
         </q-scroll-area>
@@ -201,7 +288,6 @@
         </div>
       </div>
     </div>
-
     <div class="resize-handle" @mousedown="startResizing"></div>
   </div>
 </template>
@@ -220,34 +306,34 @@ import { copyToClipboard, useQuasar } from "quasar";
 import MarkdownIt from "markdown-it";
 
 const props = defineProps({
-  // Connection
   apiUrl: {
     type: String,
     default: "http://localhost:11434/v1/chat/completions",
   },
-  apiKey: { type: String, default: "" }, // Required for OpenAI/Groq/etc.
+  apiKey: { type: String, default: "" },
   model: { type: String, default: "gemma3:4b" },
   botName: { type: String, default: "Ollama AI" },
-
-  // OpenAI Parameters (Standard naming)
   systemPrompt: { type: String, default: "You are a helpful assistant." },
   temperature: { type: Number, default: 0.7 },
-  topP: { type: Number, default: 0.9 },
   maxTokens: { type: Number, default: 2048 },
-  frequencyPenalty: { type: Number, default: 0 },
-  presencePenalty: { type: Number, default: 0 },
-  stream: { type: Boolean, default: true },
-
-  // UI
-  placeholder: { type: String, default: "Ask me anything..." },
   initialWidth: { type: Number, default: 550 },
   initialHeight: { type: Number, default: 700 },
+  placeholder: { type: String, default: "Ask me anything..." },
 });
 
 const emit = defineEmits(["message-sent", "message-received", "error"]);
 const $q = useQuasar();
 
-// --- State ---
+// --- Reactive Config ---
+const config = reactive({
+  apiUrl: props.apiUrl,
+  apiKey: props.apiKey,
+  model: props.model,
+  temperature: props.temperature,
+  maxTokens: props.maxTokens,
+});
+
+const showSettings = ref(false);
 const isDarkMode = computed(() => $q?.dark?.isActive ?? false);
 const userInput = ref("");
 const isLoading = ref(false);
@@ -265,16 +351,13 @@ const currentChatTitle = computed(() => {
   return active ? active.title : "New Conversation";
 });
 
-// --- Window Position & Size ---
+// Window State
 const windowPos = reactive({
   x: 0,
   y: 0,
   w: props.initialWidth,
   h: props.initialHeight,
 });
-const isDragging = ref(false);
-const isResizing = ref(false);
-
 const windowStyle = computed(() => ({
   transform: `translate(${windowPos.x}px, ${windowPos.y}px)`,
   width: `${windowPos.w}px`,
@@ -283,7 +366,7 @@ const windowStyle = computed(() => ({
   zIndex: 1000,
 }));
 
-// --- Markdown Setup ---
+// --- Markdown ---
 const md = new MarkdownIt({ html: true, linkify: true });
 md.renderer.rules.fence = (tokens, idx, options, env, self) => {
   const token = tokens[idx];
@@ -302,12 +385,21 @@ md.renderer.rules.fence = (tokens, idx, options, env, self) => {
 };
 const renderMarkdown = (content) => md.render(content || "");
 
-// --- Persistence ---
+// --- Methods ---
+const saveSettings = () => {
+  localStorage.setItem("ollama_chat_config", JSON.stringify(config));
+  showSettings.value = false;
+  $q.notify({ message: "Settings Saved", color: "positive", timeout: 1000 });
+};
+
 onMounted(() => {
+  const savedConfig = localStorage.getItem("ollama_chat_config");
+  if (savedConfig) Object.assign(config, JSON.parse(savedConfig));
+
   const storageKey = `history_${props.botName.replace(/\s/g, "_")}`;
-  const saved = localStorage.getItem(storageKey);
-  if (saved) {
-    chatHistory.value = JSON.parse(saved);
+  const savedHistory = localStorage.getItem(storageKey);
+  if (savedHistory) {
+    chatHistory.value = JSON.parse(savedHistory);
     chatHistory.value.length > 0
       ? loadChat(chatHistory.value[0])
       : createNewChat();
@@ -316,9 +408,90 @@ onMounted(() => {
   }
 });
 
-const saveToLocalStorage = () => {
-  const storageKey = `history_${props.botName.replace(/\s/g, "_")}`;
-  localStorage.setItem(storageKey, JSON.stringify(chatHistory.value));
+const sendMessage = async () => {
+  if (!userInput.value.trim() || isLoading.value) return;
+  const text = userInput.value;
+  messages.value.push({ role: "user", content: text, displayContent: text });
+  userInput.value = "";
+  const botIdx = messages.value.length;
+  messages.value.push({ role: "assistant", content: "", displayContent: "" });
+
+  isLoading.value = true;
+  currentBotText.value = "";
+  abortController.value = new AbortController();
+  scrollToBottom(true);
+
+  const headers = { "Content-Type": "application/json" };
+  if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
+
+  try {
+    const res = await fetch(config.apiUrl, {
+      method: "POST",
+      headers: headers,
+      signal: abortController.value.signal,
+      body: JSON.stringify({
+        model: config.model,
+        messages: messages.value
+          .slice(0, -1)
+          .map((m) => ({ role: m.role, content: m.content })),
+        stream: true,
+        temperature: config.temperature,
+        max_tokens: config.maxTokens,
+      }),
+    });
+
+    // Check if the response is successful (e.g., handles 404 for wrong model)
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(
+        errorData.error?.message || `API Error: ${res.status} ${res.statusText}`
+      );
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const lines = decoder.decode(value).split("\n");
+      for (const line of lines) {
+        const cleaned = line.replace(/^data: /, "").trim();
+        if (!cleaned || cleaned === "[DONE]") continue;
+        try {
+          const json = JSON.parse(cleaned);
+          const content =
+            json.choices?.[0]?.delta?.content || json.message?.content || "";
+          if (content) {
+            messages.value[botIdx].content += content;
+            messages.value[botIdx].displayContent =
+              messages.value[botIdx].content;
+            scrollToBottom();
+          }
+        } catch (e) {}
+      }
+    }
+  } catch (err) {
+    let errorDisplay = "";
+    if (err.name === "AbortError") {
+      errorDisplay = "*Stopped by user*";
+    } else {
+      // Display specific error details in chat
+      errorDisplay = `⚠️ **Error:** ${
+        err.message ||
+        "Could not connect to the API. Check your model name and network."
+      }`;
+    }
+    messages.value[botIdx].content = errorDisplay;
+    messages.value[botIdx].displayContent = errorDisplay;
+    emit("error", err);
+  } finally {
+    isLoading.value = false;
+    saveToLocalStorage();
+    // Return focus to input after processing completes
+    nextTick(() => {
+      if (chatInput.value) chatInput.value.focus();
+    });
+  }
 };
 
 const createNewChat = () => {
@@ -349,19 +522,36 @@ const loadChat = (chat) => {
     ...m,
     displayContent: m.content,
   }));
-  nextTick(() => scrollToBottom(true));
+  nextTick(() => {
+    scrollToBottom(true);
+    if (chatInput.value) chatInput.value.focus();
+  });
 };
 
-const deleteHistory = (id) => {
-  chatHistory.value = chatHistory.value.filter((c) => c.id !== id);
-  saveToLocalStorage();
-  if (currentChatId.value === id) createNewChat();
+const saveToLocalStorage = () => {
+  const storageKey = `history_${props.botName.replace(/\s/g, "_")}`;
+  const chatIndex = chatHistory.value.findIndex(
+    (c) => c.id === currentChatId.value
+  );
+  if (chatIndex !== -1) {
+    chatHistory.value[chatIndex].messages = [...messages.value];
+    if (
+      chatHistory.value[chatIndex].title === "New Conversation" &&
+      messages.value.length > 2
+    ) {
+      const firstUserMsg = messages.value.find((m) => m.role === "user");
+      if (firstUserMsg)
+        chatHistory.value[chatIndex].title = firstUserMsg.content.substring(
+          0,
+          30
+        );
+    }
+  }
+  localStorage.setItem(storageKey, JSON.stringify(chatHistory.value));
 };
 
-// --- Movement & Resizing ---
 const startDragging = (e) => {
   if (e.target.closest("button")) return;
-  isDragging.value = true;
   const startX = e.clientX - windowPos.x;
   const startY = e.clientY - windowPos.y;
   const move = (e) => {
@@ -369,7 +559,6 @@ const startDragging = (e) => {
     windowPos.y = e.clientY - startY;
   };
   const up = () => {
-    isDragging.value = false;
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
   };
@@ -378,7 +567,6 @@ const startDragging = (e) => {
 };
 
 const startResizing = (e) => {
-  isResizing.value = true;
   const startW = windowPos.w;
   const startH = windowPos.h;
   const startX = e.clientX;
@@ -388,7 +576,6 @@ const startResizing = (e) => {
     windowPos.h = Math.max(400, startH + (e.clientY - startY));
   };
   const up = () => {
-    isResizing.value = false;
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
   };
@@ -396,9 +583,18 @@ const startResizing = (e) => {
   document.addEventListener("mouseup", up);
 };
 
-// --- AI Chat Logic ---
-const focusInput = () => nextTick(() => chatInput.value?.focus());
-const stopGeneration = () => abortController.value?.abort();
+const scrollToBottom = (force = false) => {
+  const area = chatScroll.value;
+  if (!area) return;
+  const target = area.getScrollTarget();
+  if (
+    force ||
+    target.scrollHeight - target.offsetHeight - area.getScrollPosition().top <
+      150
+  ) {
+    nextTick(() => area.setScrollPosition("vertical", target.scrollHeight, 0));
+  }
+};
 
 const handleContentClick = (e) => {
   if (e.target.classList.contains("copy-btn")) {
@@ -409,167 +605,51 @@ const handleContentClick = (e) => {
         position: "top",
         timeout: 800,
       });
-      focusInput();
     });
   }
 };
-
-const scrollToBottom = (force = false) => {
-  const area = chatScroll.value;
-  if (!area) return;
-  const target = area.getScrollTarget();
-  const isAtBottom =
-    target.scrollHeight - target.offsetHeight - area.getScrollPosition().top <
-    150;
-  if (force || isAtBottom) {
-    nextTick(() => area.setScrollPosition("vertical", target.scrollHeight, 0));
-  }
-};
-
-const sendMessage = async () => {
-  if (!userInput.value.trim() || isLoading.value) return;
-  const text = userInput.value;
-
-  emit("message-sent", text);
-  messages.value.push({ role: "user", content: text, displayContent: text });
-  userInput.value = "";
-
-  const botIdx = messages.value.length;
-  messages.value.push({ role: "assistant", content: "", displayContent: "" });
-
-  isLoading.value = true;
-  currentBotText.value = "";
-  abortController.value = new AbortController();
-  scrollToBottom(true);
-
-  // Update Chat Title
-  const currentChat = chatHistory.value.find(
-    (c) => c.id === currentChatId.value
-  );
-  if (currentChat && currentChat.title === "New Conversation") {
-    currentChat.title = text.substring(0, 30) + (text.length > 30 ? "..." : "");
-  }
-
-  // --- OpenAI Compatible Request ---
-  const headers = { "Content-Type": "application/json" };
-  if (props.apiKey) headers["Authorization"] = `Bearer ${props.apiKey}`;
-
-  try {
-    const res = await fetch(props.apiUrl, {
-      method: "POST",
-      headers: headers,
-      signal: abortController.value.signal,
-      body: JSON.stringify({
-        model: props.model,
-        messages: messages.value
-          .slice(0, -1)
-          .map((m) => ({ role: m.role, content: m.content })),
-        stream: props.stream,
-        temperature: props.temperature,
-        top_p: props.topP,
-        max_tokens: props.maxTokens,
-        frequency_penalty: props.frequencyPenalty,
-        presence_penalty: props.presencePenalty,
-      }),
-    });
-
-    if (!res.ok) throw new Error(`API Error: ${res.status}`);
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let renderFrame;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value);
-      const lines = chunk.split("\n");
-
-      for (const line of lines) {
-        const cleanedLine = line.replace(/^data: /, "").trim();
-        if (!cleanedLine || cleanedLine === "[DONE]") continue;
-
-        try {
-          const json = JSON.parse(cleanedLine);
-          // Standard OpenAI format: choices[0].delta.content
-          // Ollama format: message.content
-          const content =
-            json.choices?.[0]?.delta?.content || json.message?.content || "";
-
-          if (content) {
-            messages.value[botIdx].content += content;
-            currentBotText.value = messages.value[botIdx].content;
-
-            cancelAnimationFrame(renderFrame);
-            renderFrame = requestAnimationFrame(() => {
-              messages.value[botIdx].displayContent =
-                messages.value[botIdx].content;
-              scrollToBottom();
-            });
-          }
-        } catch (e) {
-          console.error("Error parsing stream chunk", e);
-        }
-      }
-    }
-    emit("message-received", messages.value[botIdx].content);
-  } catch (err) {
-    if (err.name === "AbortError")
-      messages.value[botIdx].content += "\n\n**[Stopped]**";
-    else {
-      messages.value[botIdx].content = `⚠️ Error: ${err.message}`;
-      emit("error", err);
-    }
-    messages.value[botIdx].displayContent = messages.value[botIdx].content;
-  } finally {
-    isLoading.value = false;
-    abortController.value = null;
-    if (currentChat) {
-      currentChat.messages = messages.value.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-      saveToLocalStorage();
-    }
-    scrollToBottom(true);
-    focusInput();
-  }
+const stopGeneration = () => abortController.value?.abort();
+const deleteHistory = (id) => {
+  chatHistory.value = chatHistory.value.filter((c) => c.id !== id);
+  saveToLocalStorage();
+  if (currentChatId.value === id) createNewChat();
 };
 </script>
 
 <style scoped>
+.settings-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  backdrop-filter: blur(4px);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
 .ollama-chat-package {
   display: flex;
   flex-direction: column;
   z-index: 1000;
   border: 1px solid rgba(0, 0, 0, 0.1);
 }
-
 .history-sidebar {
   width: 220px;
-  height: 100%;
-  overflow-y: auto;
-  border-right: 1px solid rgba(0, 0, 0, 0.1);
   flex-shrink: 0;
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
 }
-
 .chat-area {
   flex: 1;
 }
-
-.border-top {
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
-}
-
-.border-right {
-  border-right: 1px solid rgba(0, 0, 0, 0.1);
-}
-
-.noselect {
-  user-select: none;
-}
-
 .resize-handle {
   position: absolute;
   right: 0;
@@ -578,79 +658,33 @@ const sendMessage = async () => {
   height: 15px;
   cursor: nwse-resize;
   background: linear-gradient(135deg, transparent 50%, #888 50%);
-  z-index: 1001;
 }
-
-.markdown-body-wrapper {
-  contain: content;
-  min-width: 50px;
-  line-height: 1.5;
-  font-size: 0.9rem;
-  word-break: break-word;
-}
-
-.markdown-body-wrapper.dark-mode {
-  color: #e0e0e0;
-}
-
 .markdown-body-wrapper :deep(.code-wrapper) {
-  position: relative;
-  margin: 10px 0;
   background: #1e1e1e;
   border-radius: 6px;
-  border: 1px solid #444;
   overflow: hidden;
+  margin: 10px 0;
 }
-
 .markdown-body-wrapper :deep(.code-header) {
   background: #2d2d2d;
   padding: 4px 10px;
   display: flex;
   justify-content: space-between;
-  align-items: center;
-}
-
-.markdown-body-wrapper :deep(.code-header span) {
-  font-family: monospace;
-  font-size: 10px;
   color: #999;
-  text-transform: uppercase;
+  font-size: 10px;
 }
-
-.markdown-body-wrapper :deep(.copy-btn) {
-  background: #444;
-  color: #fff;
-  border: none;
-  padding: 2px 8px;
-  border-radius: 3px;
-  font-size: 9px;
-  cursor: pointer;
-}
-
-.markdown-body-wrapper :deep(.copy-btn:hover) {
-  background: #027be3;
-}
-
 .markdown-body-wrapper :deep(pre) {
-  margin: 0;
   padding: 12px;
-  overflow-x: auto;
-}
-
-.markdown-body-wrapper :deep(pre code) {
+  margin: 0;
   color: #f8f8f2;
-  white-space: pre-wrap;
 }
-
 .slide-enter-active,
 .slide-leave-active {
   transition: all 0.25s ease-out;
 }
-
 .slide-enter-from,
 .slide-leave-to {
   width: 0;
   opacity: 0;
-  transform: translateX(-10px);
 }
 </style>
