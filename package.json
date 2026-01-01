@@ -1,0 +1,25 @@
+{
+  "name": "ollama-chat-quasar",
+  "version": "1.0.0",
+  "description": "A draggable, resizable AI chat component designed to work with LLM's like ollama",
+  "main": "index.js",
+  "files": [
+    "src",
+    "index.js"
+  ],
+  "keywords": [
+    "vue",
+    "quasar",
+    "ollama",
+    "ai",
+    "chat",
+    "llm"
+  ],
+  "author": "Sushil Suresh Garde",
+  "license": "MIT",
+  "peerDependencies": {
+    "vue": "^3.5.26",
+    "quasar": "^2.0.0",
+    "markdown-it": "^14.0.0"
+  }
+}
