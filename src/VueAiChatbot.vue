@@ -219,20 +219,24 @@ import {
 import { copyToClipboard, useQuasar } from "quasar";
 import MarkdownIt from "markdown-it";
 
-// --- Props (OpenAI Standard Parameters) ---
 const props = defineProps({
   // Connection
-  apiUrl: { type: String, default: "http://localhost:11434/api/chat" },
+  apiUrl: {
+    type: String,
+    default: "http://localhost:11434/v1/chat/completions",
+  },
+  apiKey: { type: String, default: "" }, // Required for OpenAI/Groq/etc.
   model: { type: String, default: "gemma3:4b" },
   botName: { type: String, default: "Ollama AI" },
 
-  // Model Parameters
+  // OpenAI Parameters (Standard naming)
   systemPrompt: { type: String, default: "You are a helpful assistant." },
   temperature: { type: Number, default: 0.7 },
   topP: { type: Number, default: 0.9 },
   maxTokens: { type: Number, default: 2048 },
   frequencyPenalty: { type: Number, default: 0 },
   presencePenalty: { type: Number, default: 0 },
+  stream: { type: Boolean, default: true },
 
   // UI
   placeholder: { type: String, default: "Ask me anything..." },
@@ -241,14 +245,10 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["message-sent", "message-received", "error"]);
-
 const $q = useQuasar();
-// Use a computed property to safely check for dark mode
-// This prevents the "undefined" error if $q isn't fully ready
-const isDarkMode = computed(() => {
-  return $q?.dark?.isActive ?? false;
-});
 
+// --- State ---
+const isDarkMode = computed(() => $q?.dark?.isActive ?? false);
 const userInput = ref("");
 const isLoading = ref(false);
 const chatScroll = ref(null);
@@ -256,7 +256,6 @@ const chatInput = ref(null);
 const abortController = ref(null);
 const currentBotText = ref("");
 const showHistory = ref(false);
-
 const messages = ref([]);
 const chatHistory = ref([]);
 const currentChatId = ref(null);
@@ -301,10 +300,9 @@ md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     self
   )}</div>`;
 };
-
 const renderMarkdown = (content) => md.render(content || "");
 
-// --- Lifecycle & Persistence ---
+// --- Persistence ---
 onMounted(() => {
   const storageKey = `history_${props.botName.replace(/\s/g, "_")}`;
   const saved = localStorage.getItem(storageKey);
@@ -351,10 +349,7 @@ const loadChat = (chat) => {
     ...m,
     displayContent: m.content,
   }));
-  nextTick(() => {
-    scrollToBottom(true);
-    focusInput();
-  });
+  nextTick(() => scrollToBottom(true));
 };
 
 const deleteHistory = (id) => {
@@ -376,6 +371,7 @@ const startDragging = (e) => {
   const up = () => {
     isDragging.value = false;
     document.removeEventListener("mousemove", move);
+    document.removeEventListener("mouseup", up);
   };
   document.addEventListener("mousemove", move);
   document.addEventListener("mouseup", up);
@@ -394,6 +390,7 @@ const startResizing = (e) => {
   const up = () => {
     isResizing.value = false;
     document.removeEventListener("mousemove", move);
+    document.removeEventListener("mouseup", up);
   };
   document.addEventListener("mousemove", move);
   document.addEventListener("mouseup", up);
@@ -445,6 +442,7 @@ const sendMessage = async () => {
   abortController.value = new AbortController();
   scrollToBottom(true);
 
+  // Update Chat Title
   const currentChat = chatHistory.value.find(
     (c) => c.id === currentChatId.value
   );
@@ -452,26 +450,30 @@ const sendMessage = async () => {
     currentChat.title = text.substring(0, 30) + (text.length > 30 ? "..." : "");
   }
 
+  // --- OpenAI Compatible Request ---
+  const headers = { "Content-Type": "application/json" };
+  if (props.apiKey) headers["Authorization"] = `Bearer ${props.apiKey}`;
+
   try {
     const res = await fetch(props.apiUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: headers,
       signal: abortController.value.signal,
       body: JSON.stringify({
         model: props.model,
         messages: messages.value
           .slice(0, -1)
           .map((m) => ({ role: m.role, content: m.content })),
-        stream: true,
-        options: {
-          temperature: props.temperature,
-          top_p: props.topP,
-          num_predict: props.maxTokens,
-          frequency_penalty: props.frequencyPenalty,
-          presence_penalty: props.presencePenalty,
-        },
+        stream: props.stream,
+        temperature: props.temperature,
+        top_p: props.topP,
+        max_tokens: props.maxTokens,
+        frequency_penalty: props.frequencyPenalty,
+        presence_penalty: props.presencePenalty,
       }),
     });
+
+    if (!res.ok) throw new Error(`API Error: ${res.status}`);
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -480,21 +482,34 @@ const sendMessage = async () => {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const lines = decoder.decode(value).split("\n");
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const json = JSON.parse(line);
-        if (json.message?.content) {
-          messages.value[botIdx].content += json.message.content;
-          currentBotText.value = messages.value[botIdx].content;
 
-          // requestAnimationFrame ensures render only happens on screen refresh
-          cancelAnimationFrame(renderFrame);
-          renderFrame = requestAnimationFrame(() => {
-            messages.value[botIdx].displayContent =
-              messages.value[botIdx].content;
-            scrollToBottom();
-          });
+      const chunk = decoder.decode(value);
+      const lines = chunk.split("\n");
+
+      for (const line of lines) {
+        const cleanedLine = line.replace(/^data: /, "").trim();
+        if (!cleanedLine || cleanedLine === "[DONE]") continue;
+
+        try {
+          const json = JSON.parse(cleanedLine);
+          // Standard OpenAI format: choices[0].delta.content
+          // Ollama format: message.content
+          const content =
+            json.choices?.[0]?.delta?.content || json.message?.content || "";
+
+          if (content) {
+            messages.value[botIdx].content += content;
+            currentBotText.value = messages.value[botIdx].content;
+
+            cancelAnimationFrame(renderFrame);
+            renderFrame = requestAnimationFrame(() => {
+              messages.value[botIdx].displayContent =
+                messages.value[botIdx].content;
+              scrollToBottom();
+            });
+          }
+        } catch (e) {
+          console.error("Error parsing stream chunk", e);
         }
       }
     }
@@ -503,7 +518,7 @@ const sendMessage = async () => {
     if (err.name === "AbortError")
       messages.value[botIdx].content += "\n\n**[Stopped]**";
     else {
-      messages.value[botIdx].content = "⚠️ Connection Error.";
+      messages.value[botIdx].content = `⚠️ Error: ${err.message}`;
       emit("error", err);
     }
     messages.value[botIdx].displayContent = messages.value[botIdx].content;
@@ -566,7 +581,6 @@ const sendMessage = async () => {
   z-index: 1001;
 }
 
-/* ANTI-FLICKER & LAYOUT STABILITY */
 .markdown-body-wrapper {
   contain: content;
   min-width: 50px;
@@ -579,17 +593,16 @@ const sendMessage = async () => {
   color: #e0e0e0;
 }
 
-.markdown-body-wrapper .code-wrapper {
+.markdown-body-wrapper :deep(.code-wrapper) {
   position: relative;
   margin: 10px 0;
   background: #1e1e1e;
   border-radius: 6px;
   border: 1px solid #444;
   overflow: hidden;
-  backface-visibility: hidden;
 }
 
-.markdown-body-wrapper .code-header {
+.markdown-body-wrapper :deep(.code-header) {
   background: #2d2d2d;
   padding: 4px 10px;
   display: flex;
@@ -597,14 +610,14 @@ const sendMessage = async () => {
   align-items: center;
 }
 
-.markdown-body-wrapper .code-header span {
+.markdown-body-wrapper :deep(.code-header span) {
   font-family: monospace;
   font-size: 10px;
   color: #999;
   text-transform: uppercase;
 }
 
-.markdown-body-wrapper .copy-btn {
+.markdown-body-wrapper :deep(.copy-btn) {
   background: #444;
   color: #fff;
   border: none;
@@ -614,23 +627,21 @@ const sendMessage = async () => {
   cursor: pointer;
 }
 
-.markdown-body-wrapper .copy-btn:hover {
+.markdown-body-wrapper :deep(.copy-btn:hover) {
   background: #027be3;
 }
 
-.markdown-body-wrapper pre {
+.markdown-body-wrapper :deep(pre) {
   margin: 0;
   padding: 12px;
   overflow-x: auto;
-  min-height: 1em;
 }
 
-.markdown-body-wrapper pre code {
+.markdown-body-wrapper :deep(pre code) {
   color: #f8f8f2;
   white-space: pre-wrap;
 }
 
-/* Animations */
 .slide-enter-active,
 .slide-leave-active {
   transition: all 0.25s ease-out;
