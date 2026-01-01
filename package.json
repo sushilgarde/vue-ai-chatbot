@@ -1,11 +1,20 @@
 {
-  "name": "ollama-chat-quasar",
-  "version": "1.0.0",
+  "name": "vue3-ai-chatbot",
+  "version": "1.0.5",
+  "author": "Sushil S Garde",
+  "license": "MIT",
   "description": "A draggable, resizable AI chat component designed to work with LLM's like ollama",
-  "main": "index.js",
+  "type": "module",
+  "main": "./dist/vue3-ai-chatbot.umd.js",
+  "module": "./dist/vue3-ai-chatbot.es.js",
+  "exports": {
+    ".": {
+      "import": "./dist/vue3-ai-chatbot.es.js",
+      "require": "./dist/vue3-ai-chatbot.umd.js"
+    }
+  },
   "files": [
-    "src",
-    "index.js"
+    "dist"
   ],
   "keywords": [
     "vue",
@@ -15,11 +24,19 @@
     "chat",
     "llm"
   ],
-  "author": "Sushil Suresh Garde",
-  "license": "MIT",
+  "scripts": {
+    "build": "vite build",
+    "prepublishOnly": "npm run build"
+  },
   "peerDependencies": {
-    "vue": "^3.5.26",
-    "quasar": "^2.0.0",
-    "markdown-it": "^14.0.0"
+    "@quasar/extras": "^1.17.0",
+    "markdown-it": "^14.0.0",
+    "quasar": "^2.18.6",
+    "vue": "^3.5.26"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.3",
+    "vite": "^7.3.0",
+    "vite-plugin-css-injected-by-js": "^3.5.2"
   }
 }

@@ -1,0 +1,22 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Build artifacts
+src/
+example/
+public/
+vite.config.js
+.gitignore
+.npmrc
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor folders and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

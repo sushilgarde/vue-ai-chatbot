@@ -3,14 +3,12 @@
     ref="windowRef"
     class="ollama-chat-package shadow-10 rounded-borders overflow-hidden flex flex-column"
     :style="windowStyle"
-    :class="$q.dark.isActive ? 'bg-dark border-grey-9' : 'bg-white'"
+    :class="isDarkMode ? 'bg-dark border-grey-9' : 'bg-white'"
   >
     <q-toolbar
       @mousedown="startDragging"
       class="cursor-move noselect"
-      :class="
-        $q.dark.isActive ? 'bg-black text-white' : 'bg-primary text-white'
-      "
+      :class="isDarkMode ? 'bg-black text-white' : 'bg-primary text-white'"
     >
       <q-btn
         flat
@@ -57,7 +55,7 @@
         flat
         round
         dense
-        :icon="$q.dark.isActive ? 'light_mode' : 'dark_mode'"
+        :icon="isDarkMode ? 'light_mode' : 'dark_mode'"
         @click="$q.dark.toggle()"
         size="sm"
         class="q-ml-xs"
@@ -72,7 +70,7 @@
         <div
           v-if="showHistory"
           class="history-sidebar border-right"
-          :class="$q.dark.isActive ? 'bg-grey-9' : 'bg-grey-2'"
+          :class="isDarkMode ? 'bg-grey-9' : 'bg-grey-2'"
         >
           <q-list dense padding>
             <q-item-label header class="text-overline"
@@ -121,12 +119,12 @@
               :bg-color="
                 msg.role === 'user'
                   ? 'blue-7'
-                  : $q.dark.isActive
+                  : isDarkMode
                   ? 'grey-9'
                   : 'grey-3'
               "
               :text-color="
-                msg.role === 'user' || $q.dark.isActive ? 'white' : 'black'
+                msg.role === 'user' || isDarkMode ? 'white' : 'black'
               "
             >
               <template v-slot:avatar>
@@ -145,7 +143,7 @@
                 class="markdown-body-wrapper"
                 v-html="renderMarkdown(msg.displayContent)"
                 @click="handleContentClick"
-                :class="{ 'dark-mode': $q.dark.isActive }"
+                :class="{ 'dark-mode': isDarkMode }"
               ></div>
             </q-chat-message>
           </div>
@@ -153,7 +151,7 @@
           <q-chat-message
             v-if="isLoading && currentBotText === ''"
             :name="botName"
-            :bg-color="$q.dark.isActive ? 'grey-9' : 'grey-3'"
+            :bg-color="isDarkMode ? 'grey-9' : 'grey-3'"
           >
             <template v-slot:avatar>
               <q-avatar size="32px" class="q-mr-sm">
@@ -166,7 +164,7 @@
 
         <div
           class="q-pa-sm border-top"
-          :class="$q.dark.isActive ? 'bg-black' : 'bg-white'"
+          :class="isDarkMode ? 'bg-black' : 'bg-white'"
         >
           <q-input
             ref="chatInput"
@@ -176,7 +174,7 @@
             outlined
             rounded
             dense
-            :dark="$q.dark.isActive"
+            :dark="isDarkMode"
             :disable="isLoading"
           >
             <template v-slot:after>
@@ -245,6 +243,12 @@ const props = defineProps({
 const emit = defineEmits(["message-sent", "message-received", "error"]);
 
 const $q = useQuasar();
+// Use a computed property to safely check for dark mode
+// This prevents the "undefined" error if $q isn't fully ready
+const isDarkMode = computed(() => {
+  return $q?.dark?.isActive ?? false;
+});
+
 const userInput = ref("");
 const isLoading = ref(false);
 const chatScroll = ref(null);
@@ -519,7 +523,7 @@ const sendMessage = async () => {
 };
 </script>
 
-<style lang="scss">
+<style scoped>
 .ollama-chat-package {
   display: flex;
   flex-direction: column;
@@ -538,12 +542,15 @@ const sendMessage = async () => {
 .chat-area {
   flex: 1;
 }
+
 .border-top {
   border-top: 1px solid rgba(0, 0, 0, 0.1);
 }
+
 .border-right {
   border-right: 1px solid rgba(0, 0, 0, 0.1);
 }
+
 .noselect {
   user-select: none;
 }
@@ -566,57 +573,61 @@ const sendMessage = async () => {
   line-height: 1.5;
   font-size: 0.9rem;
   word-break: break-word;
+}
 
-  &.dark-mode {
-    color: #e0e0e0;
-  }
+.markdown-body-wrapper.dark-mode {
+  color: #e0e0e0;
+}
 
-  .code-wrapper {
-    position: relative;
-    margin: 10px 0;
-    background: #1e1e1e;
-    border-radius: 6px;
-    border: 1px solid #444;
-    overflow: hidden;
-    backface-visibility: hidden;
+.markdown-body-wrapper .code-wrapper {
+  position: relative;
+  margin: 10px 0;
+  background: #1e1e1e;
+  border-radius: 6px;
+  border: 1px solid #444;
+  overflow: hidden;
+  backface-visibility: hidden;
+}
 
-    .code-header {
-      background: #2d2d2d;
-      padding: 4px 10px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      span {
-        font-family: monospace;
-        font-size: 10px;
-        color: #999;
-        text-transform: uppercase;
-      }
-      .copy-btn {
-        background: #444;
-        color: #fff;
-        border: none;
-        padding: 2px 8px;
-        border-radius: 3px;
-        font-size: 9px;
-        cursor: pointer;
-        &:hover {
-          background: #027be3;
-        }
-      }
-    }
+.markdown-body-wrapper .code-header {
+  background: #2d2d2d;
+  padding: 4px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 
-    pre {
-      margin: 0;
-      padding: 12px;
-      overflow-x: auto;
-      min-height: 1em;
-      code {
-        color: #f8f8f2;
-        white-space: pre-wrap;
-      }
-    }
-  }
+.markdown-body-wrapper .code-header span {
+  font-family: monospace;
+  font-size: 10px;
+  color: #999;
+  text-transform: uppercase;
+}
+
+.markdown-body-wrapper .copy-btn {
+  background: #444;
+  color: #fff;
+  border: none;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.markdown-body-wrapper .copy-btn:hover {
+  background: #027be3;
+}
+
+.markdown-body-wrapper pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  min-height: 1em;
+}
+
+.markdown-body-wrapper pre code {
+  color: #f8f8f2;
+  white-space: pre-wrap;
 }
 
 /* Animations */
@@ -624,6 +635,7 @@ const sendMessage = async () => {
 .slide-leave-active {
   transition: all 0.25s ease-out;
 }
+
 .slide-enter-from,
 .slide-leave-to {
   width: 0;
